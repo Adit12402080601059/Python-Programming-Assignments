@@ -5,6 +5,6 @@ It displays the top K students for each semester and finds subject-wise toppers.
 
 ## Output
 
-![Program Output](program1 output.png)
+![Program Output](program1output.png)
 # Python-Programming-Assignments
 Programming with Python-Assignment Submission
