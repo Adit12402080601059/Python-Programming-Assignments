@@ -1,143 +1,334 @@
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+import json
 import csv
 import os
-import math
-import html
 
-input_file = input("Enter CSV file path: ")
-output_folder = input("Enter output folder path: ")
-os.makedirs(output_folder, exist_ok=True)
+DATA_FILE = "student_data.json"
 
-# Read CSV
-with open(input_file, "r", newline="") as f:
-    reader = csv.DictReader(f)
-    data = list(reader)
-    columns = reader.fieldnames
+class AssignmentManager:
 
-subjects = columns[2:]
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Student Assignment Manager")
+        self.root.geometry("950x600")
 
-# Clean missing and invalid marks
-for subject in subjects:
-    valid = []
-    for row in data:
+        self.students = {}
+        self.submissions = []
+
+        self.load_data()
+        self.create_widgets()
+        self.show_records()
+
+    # Load saved data
+    def load_data(self):
+        if os.path.exists(DATA_FILE):
+            try:
+                with open(DATA_FILE, "r") as file:
+                    data = json.load(file)
+                    self.students = data.get("students", {})
+                    self.submissions = data.get("submissions", [])
+            except (json.JSONDecodeError, OSError):
+                messagebox.showwarning(
+                    "Warning", "Could not load saved data."
+                )
+
+    # Save data to JSON
+    def save_data(self):
+        with open(DATA_FILE, "w") as file:
+            json.dump({
+                "students": self.students,
+                "submissions": self.submissions
+            }, file, indent=4)
+
+    # Create GUI
+    def create_widgets(self):
+
+        form = ttk.LabelFrame(
+            self.root, text="Student and Assignment Details"
+        )
+        form.pack(fill="x", padx=10, pady=10)
+
+        ttk.Label(form, text="Enrollment:").grid(
+            row=0, column=0, padx=5, pady=5
+        )
+        self.enrollment = ttk.Entry(form)
+        self.enrollment.grid(row=0, column=1, padx=5, pady=5)
+
+        ttk.Label(form, text="Student Name:").grid(
+            row=0, column=2, padx=5, pady=5
+        )
+        self.name = ttk.Entry(form)
+        self.name.grid(row=0, column=3, padx=5, pady=5)
+
+        ttk.Label(form, text="Assignment:").grid(
+            row=1, column=0, padx=5, pady=5
+        )
+        self.assignment = ttk.Entry(form)
+        self.assignment.grid(row=1, column=1, padx=5, pady=5)
+
+        ttk.Label(form, text="Marks:").grid(
+            row=1, column=2, padx=5, pady=5
+        )
+        self.marks = ttk.Entry(form)
+        self.marks.grid(row=1, column=3, padx=5, pady=5)
+
+        ttk.Label(form, text="Status:").grid(
+            row=2, column=0, padx=5, pady=5
+        )
+        self.status = ttk.Combobox(
+            form,
+            values=["Pending", "Completed"],
+            state="readonly"
+        )
+        self.status.set("Pending")
+        self.status.grid(row=2, column=1, padx=5, pady=5)
+
+        ttk.Label(form, text="Remarks:").grid(
+            row=2, column=2, padx=5, pady=5
+        )
+        self.remarks = ttk.Entry(form)
+        self.remarks.grid(row=2, column=3, padx=5, pady=5)
+
+        # Buttons
+        buttons = ttk.Frame(self.root)
+        buttons.pack(pady=5)
+
+        ttk.Button(
+            buttons, text="Add Student",
+            command=self.add_student
+        ).grid(row=0, column=0, padx=5)
+
+        ttk.Button(
+            buttons, text="Add Submission",
+            command=self.add_submission
+        ).grid(row=0, column=1, padx=5)
+
+        ttk.Button(
+            buttons, text="Update Marks",
+            command=self.update_marks
+        ).grid(row=0, column=2, padx=5)
+
+        ttk.Button(
+            buttons, text="Export CSV",
+            command=self.export_csv
+        ).grid(row=0, column=3, padx=5)
+
+        # Filter
+        filter_frame = ttk.Frame(self.root)
+        filter_frame.pack(fill="x", padx=10, pady=5)
+
+        ttk.Label(filter_frame, text="Filter:").pack(side="left")
+
+        self.filter_status = ttk.Combobox(
+            filter_frame,
+            values=["All", "Pending", "Completed"],
+            state="readonly"
+        )
+        self.filter_status.set("All")
+        self.filter_status.pack(side="left", padx=5)
+        self.filter_status.bind(
+            "<<ComboboxSelected>>",
+            lambda event: self.show_records()
+        )
+
+        # Table
+        columns = (
+            "Enrollment", "Name", "Assignment",
+            "Status", "Marks", "Remarks"
+        )
+
+        self.table = ttk.Treeview(
+            self.root, columns=columns, show="headings"
+        )
+
+        for col in columns:
+            self.table.heading(col, text=col)
+            self.table.column(col, width=140)
+
+        self.table.pack(
+            fill="both", expand=True, padx=10, pady=10
+        )
+
+    # Validate student details
+    def validate_student(self):
+        enrollment = self.enrollment.get().strip()
+        name = self.name.get().strip()
+
+        if not enrollment or not name:
+            raise ValueError("Enter enrollment and student name.")
+
+        return enrollment, name
+
+    # Add a student
+    def add_student(self):
         try:
-            mark = float(row[subject])
-            if math.isfinite(mark) and 0 <= mark <= 100:
-                valid.append(mark)
-            else:
-                row[subject] = ""
-        except (ValueError, TypeError):
-            row[subject] = ""
+            enrollment, name = self.validate_student()
 
-    average = round(sum(valid) / len(valid)) if valid else 0
+            if enrollment in self.students:
+                raise ValueError("Student already exists.")
 
-    for row in data:
-        if row[subject] == "":
-            row[subject] = str(average)
+            self.students[enrollment] = name
+            self.save_data()
 
-# Save cleaned CSV
-with open(os.path.join(output_folder, "cleaned_marks.csv"),
-          "w", newline="") as f:
-    writer = csv.DictWriter(f, fieldnames=columns)
-    writer.writeheader()
-    writer.writerows(data)
+            messagebox.showinfo(
+                "Success", "Student added successfully."
+            )
 
-# Calculate statistics
-summary = {}
-for subject in subjects:
-    marks = [float(row[subject]) for row in data]
-    summary[subject] = {
-        "Average": sum(marks) / len(marks) if marks else 0,
-        "Minimum": min(marks) if marks else 0,
-        "Maximum": max(marks) if marks else 0
-    }
+        except ValueError as error:
+            messagebox.showerror("Input Error", str(error))
 
-with open(os.path.join(output_folder, "summary.csv"),
-          "w", newline="") as f:
-    writer = csv.writer(f)
-    writer.writerow(["Subject", "Average", "Minimum", "Maximum"])
-    for subject, stats in summary.items():
-        writer.writerow([
-            subject, round(stats["Average"], 2),
-            stats["Minimum"], stats["Maximum"]
-        ])
+    # Add assignment submission
+    def add_submission(self):
+        try:
+            enrollment, name = self.validate_student()
+            assignment = self.assignment.get().strip()
+            marks_text = self.marks.get().strip()
+            status = self.status.get()
+            remarks = self.remarks.get().strip()
 
-# Calculate student averages
-for row in data:
-    row["average"] = sum(float(row[s]) for s in subjects) / len(subjects)
+            if not assignment:
+                raise ValueError("Enter assignment name.")
 
-# Create SVG chart without external libraries
-def create_chart(filename, title, labels, values, max_value):
-    width, height = 700, 400
-    left, bottom = 170, 320
-    chart_width, chart_height = 450, 250
-    bar_height = min(28, chart_height / max(len(labels), 1) - 4)
+            if not marks_text:
+                raise ValueError("Enter marks.")
 
-    svg = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" '
-        f'width="{width}" height="{height}">',
-        '<rect width="100%" height="100%" fill="white"/>',
-        f'<text x="350" y="30" font-size="20" '
-        f'text-anchor="middle">{html.escape(title)}</text>'
-    ]
+            marks = float(marks_text)
 
-    for i, (label, value) in enumerate(zip(labels, values)):
-        y = 60 + i * (chart_height / max(len(labels), 1))
-        bar_width = max(0, value / max_value * chart_width) if max_value else 0
+            if marks < 0:
+                raise ValueError("Marks cannot be negative.")
 
-        svg.append(
-            f'<text x="{left-10}" y="{y+bar_height}" '
-            f'text-anchor="end" font-size="12">'
-            f'{html.escape(str(label))}</text>'
+            if status not in ["Pending", "Completed"]:
+                raise ValueError("Select a valid status.")
+
+            # Add student automatically if not present
+            if enrollment not in self.students:
+                self.students[enrollment] = name
+            elif self.students[enrollment] != name:
+                raise ValueError(
+                    "Enrollment belongs to another student."
+                )
+
+            record = {
+                "enrollment": enrollment,
+                "name": self.students[enrollment],
+                "assignment": assignment,
+                "status": status,
+                "marks": marks,
+                "remarks": remarks
+            }
+
+            self.submissions.append(record)
+            self.save_data()
+            self.show_records()
+
+            messagebox.showinfo(
+                "Success", "Submission added successfully."
+            )
+
+        except ValueError as error:
+            messagebox.showerror("Input Error", str(error))
+
+    # Update marks of selected submission
+    def update_marks(self):
+        selected = self.table.selection()
+
+        if not selected:
+            messagebox.showwarning(
+                "Warning", "Select a submission first."
+            )
+            return
+
+        try:
+            new_marks = float(self.marks.get().strip())
+
+            if new_marks < 0:
+                raise ValueError("Marks cannot be negative.")
+
+            index = int(selected[0])
+            record = self.submissions[index]
+
+            record["marks"] = new_marks
+            record["status"] = self.status.get()
+            record["remarks"] = self.remarks.get().strip()
+
+            self.save_data()
+            self.show_records()
+
+            messagebox.showinfo(
+                "Success", "Submission updated successfully."
+            )
+
+        except ValueError as error:
+            messagebox.showerror("Input Error", str(error))
+
+    # Display records with filtering
+    def show_records(self):
+        for item in self.table.get_children():
+            self.table.delete(item)
+
+        selected_filter = self.filter_status.get()
+
+        for index, record in enumerate(self.submissions):
+            if (selected_filter == "All" or
+                    record["status"] == selected_filter):
+
+                self.table.insert(
+                    "",
+                    "end",
+                    iid=str(index),
+                    values=(
+                        record["enrollment"],
+                        record["name"],
+                        record["assignment"],
+                        record["status"],
+                        record["marks"],
+                        record["remarks"]
+                    )
+                )
+
+    # Export CSV report
+    def export_csv(self):
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv")],
+            initialfile="assignment_report.csv"
         )
-        svg.append(
-            f'<rect x="{left}" y="{y}" width="{bar_width}" '
-            f'height="{bar_height}" fill="steelblue"/>'
-        )
-        svg.append(
-            f'<text x="{left+bar_width+5}" y="{y+bar_height}" '
-            f'font-size="12">{value:.1f}</text>'
-        )
 
-    svg.append("</svg>")
+        if not file_path:
+            return
 
-    with open(os.path.join(output_folder, filename), "w") as f:
-        f.write("\n".join(svg))
+        try:
+            with open(
+                file_path, "w", newline="", encoding="utf-8"
+            ) as file:
+
+                writer = csv.writer(file)
+
+                writer.writerow([
+                    "enrollment", "name", "assignment",
+                    "status", "marks", "remarks"
+                ])
+
+                for record in self.submissions:
+                    writer.writerow([
+                        record["enrollment"],
+                        record["name"],
+                        record["assignment"],
+                        record["status"],
+                        record["marks"],
+                        record["remarks"]
+                    ])
+
+            messagebox.showinfo(
+                "Success", "CSV report exported successfully."
+            )
+
+        except OSError as error:
+            messagebox.showerror("File Error", str(error))
 
 
-# 1. Grade distribution
-grades = {"A": 0, "B": 0, "C": 0, "D": 0, "F": 0}
-
-for row in data:
-    for subject in subjects:
-        mark = float(row[subject])
-        if mark >= 90:
-            grades["A"] += 1
-        elif mark >= 80:
-            grades["B"] += 1
-        elif mark >= 70:
-            grades["C"] += 1
-        elif mark >= 60:
-            grades["D"] += 1
-        else:
-            grades["F"] += 1
-
-create_chart("grade_distribution.svg", "Grade Distribution",
-             list(grades.keys()), list(grades.values()),
-             max(max(grades.values()), 1))
-
-# 2. Subject averages
-create_chart("subject_average.svg", "Subject-wise Average",
-             list(summary.keys()),
-             [s["Average"] for s in summary.values()], 100)
-
-# 3. Top 10 performers
-top = sorted(data, key=lambda r: r["average"], reverse=True)[:10]
-create_chart("top_performers.svg", "Top 10 Performers",
-             [r["name"] for r in top],
-             [r["average"] for r in top], 100)
-
-print("Analysis completed!")
-print("Files saved in:", output_folder)
-print("Created cleaned_marks.csv, summary.csv")
-print("Created grade_distribution.svg, subject_average.svg")
-print("Created top_performers.svg")
+# Run application
+root = tk.Tk()
+app = AssignmentManager(root)
+root.mainloop()
